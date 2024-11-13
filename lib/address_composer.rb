@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "address_composer/version"
 require "yaml"
 require "mustache"
@@ -5,11 +7,18 @@ require "uri"
 
 class AddressComposer
   GEM_ROOT = Gem::Specification.find_by_name("address_composer").gem_dir
-  Templates = YAML.safe_load(IO.read(File.join(GEM_ROOT, "address-formatting", "conf", "countries", "worldwide.yaml")), aliases: true)
-  ComponentsList = Psych.load_stream(File.read(File.join(GEM_ROOT,"address-formatting", "conf","components.yaml")))
-  AllComponents = ComponentsList.map { |h| h["name"] } + ComponentsList.flat_map { |h| h["aliases"] }.compact
-  StateCodes = YAML.safe_load(IO.read(File.join(GEM_ROOT, "address-formatting", "conf", "state_codes.yaml")), aliases: true)
-  CountyCodes = YAML.safe_load(IO.read(File.join(GEM_ROOT, "address-formatting", "conf", "county_codes.yaml")), aliases: true)
+  Templates = YAML.safe_load(IO.read(File.join(GEM_ROOT, "address-formatting", "conf", "countries", "worldwide.yaml")), aliases: true, symbolize_names: true)
+  ComponentsList = begin
+                     c_list = Psych.load_stream(File.read(File.join(GEM_ROOT,"address-formatting", "conf","components.yaml")), symbolize_names: true)
+                     c_list.each do |component_hash|
+                       component_hash[:name] = component_hash[:name].to_sym
+                       component_hash[:aliases]&.map!(&:to_sym)
+                     end
+                     c_list
+                   end
+  AllComponents = ComponentsList.map { |h| h[:name] } + ComponentsList.flat_map { |h| h[:aliases] }.compact
+  StateCodes = YAML.safe_load(IO.read(File.join(GEM_ROOT, "address-formatting", "conf", "state_codes.yaml")), aliases: true, symbolize_names: true)
+  CountyCodes = YAML.safe_load(IO.read(File.join(GEM_ROOT, "address-formatting", "conf", "county_codes.yaml")), aliases: true, symbolize_names: true)
 
   class Template < Mustache
     def first
@@ -32,7 +41,7 @@ class AddressComposer
   end
 
   def compose
-    if components["country_code"]
+    if components[:country_code]
       result = Template.render(template, components).squeeze("\n").lstrip.gsub(/\s*\n\s*/, "\n")
       result = post_format_replace(result)
     else
@@ -58,10 +67,10 @@ class AddressComposer
   private
 
   def template
-    @template ||= if (components.keys & %w[road postcode]).empty?
-                    formatting_rule["fallback_template"] || Templates["default"]["fallback_template"]
+    @template ||= if (components.keys & %i[road postcode]).empty?
+                    formatting_rule[:fallback_template] || Templates[:default][:fallback_template]
                   else
-                    formatting_rule["address_template"]
+                    formatting_rule[:address_template]
                   end
   end
 
@@ -70,18 +79,18 @@ class AddressComposer
   end
 
   def country_code
-    @country_code || components["country_code"]
+    @country_code || components[:country_code_sym]
   end
 
   def formatting_rules
     return @formatting_rules if @formatting_rules
 
     initial_rule = Templates[country_code]
-
     if initial_rule
-      fallback_rule = Templates[initial_rule["use_country"]]
+      initial_rule[:use_country] = initial_rule[:use_country].to_sym if initial_rule.key?(:use_country)
+      fallback_rule = Templates[initial_rule[:use_country]&.to_sym]
     else
-      initial_rule = Templates["default"]
+      initial_rule = Templates[:default]
     end
 
     @formatting_rules = [initial_rule, fallback_rule].compact
@@ -89,7 +98,8 @@ class AddressComposer
 
   def normalize_components
     components.transform_values!(&:to_s)
-    components["country_code"] = components["country_code"].to_s.upcase
+    components[:country_code] = components[:country_code].to_s.upcase
+    components[:country_code_sym] = components[:country_code].to_sym
 
     fix_countries
     fix_states
@@ -99,42 +109,46 @@ class AddressComposer
   end
 
   def fix_countries
-    if components["country_code"] == "NL" && components["state"]
-      if components["state"] == "Curaçao"
-        components["country_code"] = "CW"
-        components["country"] = "Curaçao"
-      elsif components["state"].match?(/sint maarten/i)
-        components["country_code"] = "SX"
-        components["country"] = "Sint Maarten"
-      elsif components["state"].match?(/aruba/i)
-        components["country_code"] = "AW"
-        components["country"] = "Aruba"
+    if components[:country_code] == "NL" && components[:state]
+      if components[:state] == "Curaçao"
+        components[:country_code_sym] = :CW
+        components[:country_code] = components[:country_code_sym].name
+        components[:country] = "Curaçao"
+      elsif components[:state].match?(/sint maarten/i)
+        components[:country_code_sym] = :SX
+        components[:country_code] = components[:country_code_sym].name
+        components[:country] = "Sint Maarten"
+      elsif components[:state].match?(/aruba/i)
+        components[:country_code_sym] = :AW
+        components[:country_code] = components[:country_code_sym].name
+        components[:country] = "Aruba"
       end
     end
   end
 
   def fix_states
-    if components["state"]&.match?(/^washington,? d\.?c\.?/i)
-      components["state_code"] = "DC"
-      components["state"] = "District of Columbia"
-      components["city"] = "Washington"
+    if components[:state]&.match?(/^washington,? d\.?c\.?/i)
+      components[:state_code] = "DC"
+      components[:state] = "District of Columbia"
+      components[:city] = "Washington"
     end
   end
 
   def apply_formatting_rules
     formatting_rules.each do |rule|
-      new_component = rule["add_component"]
-      use_country = rule["use_country"]
-      change_country = rule["change_country"]
-      replaces = rule["replace"]
+      new_component = rule[:add_component]
+      use_country = rule[:use_country]
+      change_country = rule[:change_country]
+      replaces = rule[:replace]
 
       if use_country
         @use_country = use_country
-        components["country_code"] = @use_country
+        components[:country_code] = @use_country.name
+        components[:country_code_sym] = components[:country_code].to_sym
       end
 
       if change_country
-        components["country"] = change_country.gsub(/\$state/, components["state"].to_s)
+        components[:country] = change_country.gsub(/\$state/, components[:state].to_s)
       end
 
       if replaces
@@ -142,37 +156,38 @@ class AddressComposer
       end
 
       if new_component
-        components.store(*new_component.split("="))
+        key, value = new_component.split("=")
+        components[key.to_sym] = value
       end
     end
   end
 
-  SMALL_DISTRICT_COUNTRIES = [
-    'BR',
-    'CR',
-    'ES',
-    'NI',
-    'PY',
-    'RO',
-    'TG',
-    'TM',
-    'XK',
+  SMALL_DISTRICT_COUNTRIES = %i[
+    BR,
+    CR,
+    ES,
+    NI,
+    PY,
+    RO,
+    TG,
+    TM,
+    XK,
   ].freeze
 
   def apply_aliases
-    sdc = SMALL_DISTRICT_COUNTRIES.include?(components['country_code'])
-    district = components['district']
-    components['state_district'] = district if district && !sdc
+    sdc = SMALL_DISTRICT_COUNTRIES.include?(components[:country_code_sym])
+    district = components[:district]
+    components[:state_district] = district if district && !sdc
 
     components.keys.each do |key|
-      next if !sdc && key == 'district'
-      component = ComponentsList.detect { |member| member["aliases"].to_a.include?(key) }
-      components[component["name"]] ||= components[key] if component
+      next if !sdc && key == :district
+      component = ComponentsList.detect { |member| member[:aliases].to_a.include?(key) }
+      components[component[:name]] ||= components[key] if component
     end
 
-    unknown_components = components.keys - AllComponents
+    unknown_components = components.keys - AllComponents - [:country_code_sym]
 
-    components["attention"] = unknown_components.map do |unknown|
+    components[:attention] = unknown_components.map do |unknown|
       components.delete(unknown)
     end.join(" ")
   end
@@ -191,26 +206,26 @@ class AddressComposer
   end
 
   def normalize_aliases
-    state_group = [components["state"], components["state_code"]].compact
-    state_code, state = StateCodes[@use_country || components["country_code"].upcase]&.select { |k, v| ([k, v] & state_group).any? }.to_a.flatten
-    components["state_code"] = state_code unless state_code.nil?
-    components["state"] = state unless state.nil?
+    state_group = [components[:state], components[:state_code]].compact
+    state_code, state = StateCodes[@use_country || components[:country_code_sym]]&.select { |k, v| ([k, v] & state_group).any? }.to_a.flatten
+    components[:state_code] = state_code unless state_code.nil?
+    components[:state] = state unless state.nil?
 
-    if components["county"] && !components["county_code"]
-      components["county_code"] = get_county_code(components["county"], components["country_code"])
+    if components[:county] && !components[:county_code]
+      components[:county_code] = get_county_code(components[:county], components[:country_code_sym])
     end
 
-    if components["postcode"]&.include?(";")
-      components.delete("postcode")
+    if components[:postcode]&.include?(";")
+      components.delete(:postcode)
     end
 
-    if components["postcode"]&.include?(",")
-      components["postcode"] = components["postcode"].split(",").first
+    if components[:postcode]&.include?(",")
+      components[:postcode] = components[:postcode].split(",").first
     end
 
     # If country is a number use the state as country
-    if components["state"] && components["country"]&.match?(/^\d+$/)
-      components["country"] = components["state"]
+    if components[:state] && components[:country]&.match?(/^\d+$/)
+      components[:country] = components[:state]
     end
 
     # Clean values with "", nil or []
@@ -227,9 +242,11 @@ class AddressComposer
 
       if from.match?(/^.*=/)
         attr, value = from.split("=")
+        attr = attr.to_sym
         components[attr] = components[attr]&.gsub(/#{value}/, to)
       else
         components.keys.each do |key|
+          next if key == :country_code_sym
           components[key] = components[key]&.gsub(Regexp.new(from), to)
         end
       end
@@ -237,9 +254,9 @@ class AddressComposer
   end
 
   def post_format_replace(string)
-    return string unless formatting_rule["postformat_replace"]
+    return string unless formatting_rule[:postformat_replace]
 
-    formatting_rule["postformat_replace"].each do |rule|
+    formatting_rule[:postformat_replace].each do |rule|
       from = rule.first
       to = rule.last.tr("$", "\\")
       string = string.gsub(/#{from}/, to)

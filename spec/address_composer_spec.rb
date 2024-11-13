@@ -4,11 +4,11 @@ RSpec.describe AddressComposer do
   end
 
   Dir["address-formatting/testcases/**/*.yaml"].each do |file|
-    tests = Psych.load_stream(File.read(file))
+    tests = Psych.load_stream(File.read(file), symbolize_names: true)
     tests.each do |test|
-      description = test["description"]
-      components = test["components"]
-      expected_formatted_address = test["expected"]
+      description = test[:description]
+      components = test[:components]
+      expected_formatted_address = test[:expected]
 
       describe "#{File.basename(file)} - #{description}" do
         subject(:formatted_address) { described_class.compose(components) }

@@ -6,6 +6,8 @@ of that formatter.
 
 The goal of this gem is processing the output of [ruby_postal](https://github.com/openvenues/ruby_postal)
 
+**Warning**: This fork of address_composer is made to use symbols instead of strings for all keys. It is not compatible with the standard version.
+
 ## Installation
 
 Add this line to your application's Gemfile:
@@ -28,15 +30,15 @@ Or install it yourself as:
 require "address_composer"
 
 address_components = {
-  "house_number" => 301,
-  "road" => "Hamilton Avenue",
-  "neighbourhood" => "Crescent Park",
-  "city" => "Palo Alto",
-  "postcode" => 94303,
-  "county" => "Santa Clara County",
-  "state" => "California",
-  "country" => "United States of America",
-  "country_code" => "US"
+  :house_number => 301,
+  :road => "Hamilton Avenue",
+  :neighbourhood => "Crescent Park",
+  :city => "Palo Alto",
+  :postcode => 94303,
+  :county => "Santa Clara County",
+  :state => "California",
+  :country => "United States of America",
+  :country_code => "US"
 }
 
 puts AddressComposer.compose(address_components)
