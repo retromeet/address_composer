@@ -7,6 +7,7 @@ PATH
 GEM
   remote: https://rubygems.org/
   specs:
+    ast (2.4.2)
     debug (1.9.2)
       irb (~> 1.10)
       reline (>= 0.3.8)
@@ -15,12 +16,21 @@ GEM
     irb (1.14.1)
       rdoc (>= 4.0.0)
       reline (>= 0.4.2)
+    json (2.9.1)
+    language_server-protocol (3.17.0.3)
     mustache (1.1.1)
+    parallel (1.26.3)
+    parser (3.3.6.0)
+      ast (~> 2.4.1)
+      racc
     psych (5.2.0)
       stringio
+    racc (1.8.1)
+    rainbow (3.1.1)
     rake (13.0.6)
     rdoc (6.7.0)
       psych (>= 4.0.0)
+    regexp_parser (2.10.0)
     reline (0.5.11)
       io-console (~> 0.5)
     rspec (3.10.0)
@@ -36,7 +46,23 @@ GEM
       diff-lcs (>= 1.2.0, < 2.0)
       rspec-support (~> 3.10.0)
     rspec-support (3.10.2)
+    rubocop (1.70.0)
+      json (~> 2.3)
+      language_server-protocol (>= 3.17.0)
+      parallel (~> 1.10)
+      parser (>= 3.3.0.2)
+      rainbow (>= 2.2.2, < 4.0)
+      regexp_parser (>= 2.9.3, < 3.0)
+      rubocop-ast (>= 1.36.2, < 2.0)
+      ruby-progressbar (~> 1.7)
+      unicode-display_width (>= 2.4.0, < 4.0)
+    rubocop-ast (1.37.0)
+      parser (>= 3.3.1.0)
+    ruby-progressbar (1.13.0)
     stringio (3.1.2)
+    unicode-display_width (3.1.4)
+      unicode-emoji (~> 4.0, >= 4.0.4)
+    unicode-emoji (4.0.4)
 
 PLATFORMS
   ruby
@@ -48,6 +74,7 @@ DEPENDENCIES
   debug (>= 1.9)
   rake (>= 13.0)
   rspec (>= 3.10)
+  rubocop (~> 1.70)
 
 BUNDLED WITH
    2.6.2
