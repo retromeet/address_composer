@@ -19,6 +19,21 @@ class AddressComposer
   AllComponents = ComponentsList.map { |h| h[:name] } + ComponentsList.flat_map { |h| h[:aliases] }.compact
   StateCodes = YAML.safe_load(IO.read(File.join(GEM_ROOT, "address-formatting", "conf", "state_codes.yaml")), aliases: true, symbolize_names: true)
   CountyCodes = YAML.safe_load(IO.read(File.join(GEM_ROOT, "address-formatting", "conf", "county_codes.yaml")), aliases: true, symbolize_names: true)
+  CountryToLanguage = begin
+                        c2l = YAML.safe_load(IO.read(File.join(GEM_ROOT, "address-formatting", "conf", "country2lang.yaml")), aliases: true, symbolize_names: true)
+                        c2l.transform_values! do |v|
+                          v.split(",").map(&:to_sym)
+                        end
+                        c2l.freeze
+                      end
+  Abbreviations = begin
+                    abbr = {}
+                    Dir.each_child(File.join(GEM_ROOT, "address-formatting", "conf", "abbreviations")) do |file|
+                      country_code, = file.split(".", 2)
+                      abbr[country_code.to_sym] = YAML.safe_load(IO.read(File.join(GEM_ROOT, "address-formatting", "conf", "abbreviations", file)), aliases: true, symbolize_names: true)
+                    end
+                    abbr.freeze
+                  end
 
   class Template < Mustache
     def first
@@ -36,6 +51,7 @@ class AddressComposer
 
   def initialize(components)
     self.components = components.dup
+    @should_abbreviate = self.components.delete(:should_abbreviate) || false
 
     normalize_components
   end
@@ -48,23 +64,31 @@ class AddressComposer
       result = components.values.join(" ")
     end
 
+    clean(result)
+  end
+
+  private
+
+  attr_reader :should_abbreviate
+
+  def clean(result)
     # Remove duplicated spaces
     result = result.squeeze(" ")
 
     # Remove duplicated returns and add one at the end
-    result = result.split("\n").uniq.join("\n") + "\n"
+    result = "#{result.split("\n").uniq.join("\n")}\n"
+
+    result.gsub!(/,\s*,/, ",") # multiple commas to one
 
     # Remove spaces and commas before and after return
     result = result.gsub(/[,|\s]*\n[\s|,]*/, "\n")
 
     # Remove duplicated consecutive words
-    result = result.gsub(/([[:alnum:]]+,)\s+\1/, '\1') # remove duplicates
+    result = result.gsub(/([[:alnum:]]+),\s+\1/, '\1') # remove duplicates
 
     # Remove trailing non-word characters
     result.sub(/^[,|\s|-]*/, "")
   end
-
-  private
 
   def template
     @template ||= if (components.keys & %i[road postcode]).empty?
@@ -106,6 +130,24 @@ class AddressComposer
     apply_formatting_rules
     apply_aliases
     normalize_aliases
+    abbreviate if should_abbreviate
+  end
+
+  def abbreviate
+    langs = CountryToLanguage[components[:country_code_sym]]
+    return unless langs
+
+    langs.each do |lang|
+      next unless Abbreviations[lang]
+
+      Abbreviations[lang].each_key do |abbrev_component|
+        next unless components[abbrev_component]
+
+        Abbreviations[lang][abbrev_component].each do |k, v|
+          components[abbrev_component].sub!(/(^|\s)#{k}\b/, "\\1#{v}")
+        end
+      end
+    end
   end
 
   def fix_countries
@@ -206,8 +248,15 @@ class AddressComposer
   end
 
   def normalize_aliases
-    state_group = [components[:state], components[:state_code]].compact
-    state_code, state = StateCodes[@use_country || components[:country_code_sym]]&.select { |k, v| ([k, v] & state_group).any? }.to_a.flatten
+    state_group = [components[:state]&.upcase, components[:state_code]&.upcase].compact
+    # TODO: This will upcase names for the state codes every time we pass by here. Probably should be memoized for performance
+    state_code, state = StateCodes[@use_country || components[:country_code_sym]]&.select do |k, v|
+      if v.is_a? Hash
+        ([k&.name&.upcase, v.values.map(&:upcase)] & state_group).any?
+      else
+        ([k&.name&.upcase, v&.upcase] & state_group).any?
+      end
+    end.to_a.flatten
     components[:state_code] = state_code unless state_code.nil?
     components[:state] = state unless state.nil?
 
