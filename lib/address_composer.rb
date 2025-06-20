@@ -205,15 +205,15 @@ class AddressComposer
   end
 
   SMALL_DISTRICT_COUNTRIES = %i[
-    BR,
-    CR,
-    ES,
-    NI,
-    PY,
-    RO,
-    TG,
-    TM,
-    XK,
+    BR
+    CR
+    ES
+    NI
+    PY
+    RO
+    TG
+    TM
+    XK
   ].freeze
 
   def apply_aliases
